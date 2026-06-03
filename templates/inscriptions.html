@@ -1,0 +1,18 @@
+<h1>Inscription</h1>
+<div class=thumbnails>
+%% for id in &self.inscriptions {
+  {{Iframe::thumbnail(*id)}}
+%% }
+</div>
+<div class=center>
+%% if self.page_index > 0 {
+<a class=prev href=/inscriptions/{{self.page_index - 1}}>prev</a>
+%% } else {
+prev
+%% }
+%% if self.more {
+<a class=next href=/inscriptions/{{self.page_index + 1}}>next</a>
+%% } else {
+next
+%% }
+</div>

@@ -1,0 +1,12 @@
+.DS_Store
+/.ai
+/.claude
+/.idea
+/target
+/tmp
+CLAUDE.md
+GEMINI.md
+ordwoj.yaml
+*.redb
+ord-wojakcoin-data/
+hi.txt

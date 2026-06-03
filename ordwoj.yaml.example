@@ -1,0 +1,30 @@
+# ordwoj configuration
+# Copy this file to your data directory as ordwoj.yaml
+# Default locations:
+#   Linux: ~/.local/share/ordwoj/ordwoj.yaml
+#   macOS: ~/Library/Application Support/ordwoj/ordwoj.yaml
+# Or specify with: --config <path> or --config-dir <dir>
+
+# Wojakcoin Core RPC connection
+#wojakcoin_rpc_username: user
+#wojakcoin_rpc_password: pass
+#rpc_url: "127.0.0.1:20760/wallet/ord"
+#wojakcoin_data_dir: /path/to/.wojakcoin
+#cookie_file: /path/to/.cookie
+
+# Index settings
+#data_dir: /path/to/ordwoj/data
+#index: /path/to/index.redb
+#index_sats: false
+#first_inscription_height: 1
+
+# Server: where `ordwoj server` listens
+#http_port: 8383
+#address: "127.0.0.1"
+
+# Wallet: where wallet commands connect (must match server above)
+#server_url: "http://127.0.0.1:8383"
+
+# Hide specific inscriptions from the explorer
+#hidden:
+#  - "inscription_id_here"

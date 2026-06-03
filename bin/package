@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+set -euxo pipefail
+
+VERSION=${REF#"refs/tags/"}
+DIST=`pwd`/dist
+
+echo "Packaging ordwoj $VERSION for $TARGET..."
+
+test -f Cargo.lock || cargo generate-lockfile
+
+echo "Building ordwoj..."
+RUSTFLAGS="--deny warnings $TARGET_RUSTFLAGS" \
+  cargo build --bin ordwoj --target $TARGET --release
+  EXECUTABLE=target/$TARGET/release/ordwoj
+
+echo "Copying release files..."
+mkdir dist
+cp \
+  $EXECUTABLE \
+  Cargo.lock \
+  Cargo.toml \
+  LICENSE.md \
+  README.md \
+  $DIST
+
+cd $DIST
+echo "Creating release archive..."
+ARCHIVE=$DIST/ordwoj-$VERSION-$TARGET.tar.gz
+tar czf $ARCHIVE *
+echo "archive=$ARCHIVE" >> $GITHUB_OUTPUT
