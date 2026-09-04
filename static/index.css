@@ -22,8 +22,8 @@ html {
 
 main {
   margin: 0 auto;
-  padding: 0 1rem 1rem;
   max-width: 100%;
+  padding: 0 max(1rem, env(safe-area-inset-left, 0px)) max(1rem, env(safe-area-inset-bottom, 0px)) max(1rem, env(safe-area-inset-right, 0px));
   width: 50rem;
 }
 
@@ -67,6 +67,8 @@ nav {
   display: flex;
   gap: 1rem;
   padding: 1rem;
+  padding-left: max(1rem, env(safe-area-inset-left, 0px));
+  padding-right: max(1rem, env(safe-area-inset-right, 0px));
 }
 
 nav > :first-child {
@@ -99,9 +101,41 @@ ol, ul {
   overflow: hidden;
 }
 
-@media (max-width: 38rem) {
+/* Tablets and phones (iPad mini, iPhone landscape) */
+@media (max-width: 608px), (max-width: 38rem) {
   nav {
     flex-direction: column;
+  }
+
+  h1 {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .inscription {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .inscription > *:nth-child(1),
+  .inscription > *:nth-child(3) {
+    align-items: center;
+    display: flex;
+    flex: 0 0 auto;
+    font-size: 150%;
+    justify-content: center;
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+  }
+
+  .inscription > *:nth-child(2) {
+    flex: 1 1 auto;
+    min-height: min(75vw, 22rem);
+    width: 100%;
+  }
+
+  .inscription iframe {
+    min-height: min(75vw, 22rem);
   }
 }
 
@@ -175,21 +209,42 @@ a.mythic {
 }
 
 .thumbnails {
-  display: flex;
-  flex-wrap: wrap;
+  display: block;
 }
 
 .thumbnails > a {
   border-radius: 2%;
-  margin: 1%;
+  display: block;
+  margin: 0.75rem 0;
+  min-height: 10rem;
   overflow: hidden;
-  width: 23%;
+  width: auto;
 }
 
 .thumbnails iframe {
-  height: 100%;
+  aspect-ratio: auto;
+  min-height: 10rem;
   pointer-events: none;
   width: 100%;
+}
+
+@media (min-width: 609px) {
+  .thumbnails {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .thumbnails > a {
+    display: block;
+    margin: 1%;
+    min-height: 0;
+    width: 23%;
+  }
+
+  .thumbnails iframe {
+    aspect-ratio: 1 / 1;
+    min-height: 0;
+  }
 }
 
 .inscription {

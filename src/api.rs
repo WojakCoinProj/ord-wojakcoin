@@ -127,6 +127,62 @@ pub struct Address {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+pub struct Wjk20Balance {
+  pub tick: String,
+  pub balance: String,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+pub struct Wjk20TokenInfo {
+  pub tick: String,
+  pub max: String,
+  pub lim: String,
+  pub dec: u8,
+  pub inscription_id: String,
+  pub inscription_number: u32,
+  pub height: u32,
+  pub deployer: String,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+pub struct Wjk20DeployEvent {
+  pub op: String,
+  pub tick: String,
+  pub amt: Option<String>,
+  pub max: Option<String>,
+  pub lim: Option<String>,
+  pub inscription_id: String,
+  pub inscription_number: u32,
+  pub height: u32,
+  pub address: Option<String>,
+  pub to_address: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+pub struct WojakmapClaim {
+  pub block_number: u32,
+  pub inscription_id: InscriptionId,
+  pub claim_height: u32,
+  pub claim_timestamp: u32,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+pub struct CollectionSummary {
+  pub inscription_id: InscriptionId,
+  pub inscription_number: u32,
+  pub child_count: u64,
+  pub properties: Option<Properties>,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+pub struct CollectionDetail {
+  pub inscription_id: InscriptionId,
+  pub inscription_number: u32,
+  pub children: Vec<InscriptionId>,
+  pub properties: Option<Properties>,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct Status {
   pub address_index: bool,
   pub chain: String,

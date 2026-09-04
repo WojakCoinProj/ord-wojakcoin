@@ -5,7 +5,7 @@ use {
   self::{
     entry::{
       BlockHashValue, Entry, InscriptionEntry, InscriptionEntryValue, InscriptionIdValue,
-      OutPointValue, SatPointValue, SatRange,
+      OutPointValue, SatPointValue, SatRange, WojakmapClaimEntryValue,
     },
     updater::Updater,
   },
@@ -23,21 +23,25 @@ use {
   std::io::{self, BufWriter, Write},
   std::sync::atomic::{self, AtomicBool},
 };
-mod entry;
+pub(crate) mod entry;
 mod fetcher;
 pub(crate) mod reorg;
 mod rtx;
-mod updater;
+pub(crate) mod updater;
+mod wjk20_read;
+
+pub use self::entry::WojakmapClaimEntry;
 
 macro_rules! define_table {
   ($name:ident, $key:ty, $value:ty) => {
-    const $name: TableDefinition<$key, $value> = TableDefinition::new(stringify!($name));
+    pub(crate) const $name: TableDefinition<$key, $value> =
+      TableDefinition::new(stringify!($name));
   };
 }
 
 macro_rules! define_multimap_table {
   ($name:ident, $key:ty, $value:ty) => {
-    const $name: MultimapTableDefinition<$key, $value> =
+    pub(crate) const $name: MultimapTableDefinition<$key, $value> =
       MultimapTableDefinition::new(stringify!($name));
   };
 }
@@ -61,6 +65,14 @@ define_multimap_table! { ADDRESS_TO_INSCRIPTION_IDS, &str, &InscriptionIdValue }
 define_table! { INSCRIPTION_ID_TO_ADDRESS, &InscriptionIdValue, &str }
 define_multimap_table! { INSCRIPTION_NUMBER_TO_PARENTS, u32, u32 }
 define_multimap_table! { INSCRIPTION_NUMBER_TO_CHILDREN, u32, u32 }
+define_table! { WJK20_DEPLOY, &str, &[u8] }
+define_table! { WJK20_BALANCE, &[u8], &[u8] }
+define_table! { WJK20_PENDING_TRANSFER, &InscriptionIdValue, &[u8] }
+define_table! { WJK20_PENDING_MINT, &InscriptionIdValue, &[u8] }
+define_table! { WJK20_EVENT_BY_NUMBER, u32, &[u8] }
+define_multimap_table! { WJK20_TICK_TO_NUMBERS, &str, u32 }
+define_table! { WJKMAP_ROOT_NUMBER, u32, u8 }
+define_table! { WJKMAP_BLOCK_TO_CLAIM, u32, WojakmapClaimEntryValue }
 
 const SCHEMA_VERSION: u64 = 6;
 
@@ -165,6 +177,7 @@ impl Index {
     let tx = database.begin_write()?;
     tx.open_multimap_table(INSCRIPTION_NUMBER_TO_PARENTS)?;
     tx.open_multimap_table(INSCRIPTION_NUMBER_TO_CHILDREN)?;
+    crate::wjk20::tables::migrate_tx(&tx)?;
     tx.commit()?;
     Ok(())
   }
@@ -252,6 +265,7 @@ impl Index {
       tx.open_table(INSCRIPTION_ID_TO_ADDRESS)?;
       tx.open_multimap_table(INSCRIPTION_NUMBER_TO_PARENTS)?;
       tx.open_multimap_table(INSCRIPTION_NUMBER_TO_CHILDREN)?;
+      crate::wjk20::tables::migrate_tx(&tx)?;
 
       tx.open_table(STATISTIC_TO_COUNT)?
         .insert(&Statistic::Schema.key(), &SCHEMA_VERSION)?;
@@ -621,6 +635,135 @@ impl Index {
 
   pub(crate) fn block_header_info(&self, hash: BlockHash) -> Result<Option<GetBlockHeaderResult>> {
     self.client.get_block_header_info(&hash).into_option()
+  }
+
+  pub fn rebuild_wjk20(&self) -> Result {
+    log::info!("Clearing WJK-20 ledger and replaying from chain…");
+    let rtx = self.database.begin_read()?;
+    let height_to_block = rtx.open_table(HEIGHT_TO_BLOCK_HASH)?;
+    let max_height = height_to_block
+      .iter()?
+      .next_back()
+      .transpose()?
+      .map(|(h, _)| h.value())
+      .unwrap_or(0);
+
+    let mut start_height = self.first_inscription_height;
+    if let Ok(id_to_entry) = rtx.open_table(INSCRIPTION_ID_TO_INSCRIPTION_ENTRY) {
+      let mut min_h = u32::MAX;
+      for entry in id_to_entry.iter()? {
+        let (_, value) = entry?;
+        min_h = min_h.min(InscriptionEntry::load(value.value()).height);
+      }
+      if min_h != u32::MAX {
+        start_height = start_height.max(min_h);
+      }
+    }
+    drop(rtx);
+
+    log::info!("WJK-20 rebuild from height {start_height} to {max_height}");
+
+    {
+      let wtx = self.database.begin_write()?;
+      {
+        let mut tables = crate::wjk20::open_write_tables(&wtx)?;
+        crate::wjk20::tables::clear_wjk20_ledger(&mut tables)?;
+        tables.wojakmap_roots.retain(|_, _| false)?;
+        // Keep existing wojakmap claims; try_claim during replay is first-wins no-op.
+      }
+      wtx.commit()?;
+    }
+
+    let network = self.chain.network();
+    for height in start_height..=max_height {
+      let block = self
+        .get_block_by_height(height)?
+        .ok_or_else(|| anyhow!("missing block at height {height}"))?;
+      let block = updater::BlockData::from(block);
+
+      {
+        let wtx = self.database.begin_write()?;
+        {
+          let id_to_entry = wtx.open_table(INSCRIPTION_ID_TO_INSCRIPTION_ENTRY)?;
+          let tables = crate::wjk20::open_write_tables(&wtx)?;
+          let mut wjk20 = crate::wjk20::Wjk20Updater::new(tables, network);
+          wjk20.replay_block_data(height, &block, |id| {
+            id_to_entry
+              .get(&id.store())
+              .ok()
+              .flatten()
+              .map(|entry| InscriptionEntry::load(entry.value()).number)
+          })?;
+        }
+        wtx.commit()?;
+      }
+
+      if height % 5000 == 0 {
+        log::info!("WJK-20 rebuild at height {height}/{max_height}");
+      }
+    }
+
+    log::info!("WJK-20 rebuild complete through height {max_height}");
+    Ok(())
+  }
+
+  /// Rebuild dogemap-style wojakmap claims from already-indexed inscription bodies.
+  /// Does not touch the WJK-20 balance ledger.
+  pub fn rebuild_wojakmap_claims(&self) -> Result {
+    log::info!("Rebuilding wojakmap claims from indexed inscriptions…");
+
+    {
+      let wtx = self.database.begin_write()?;
+      {
+        let mut tables = crate::wjk20::open_write_tables(&wtx)?;
+        crate::wjk20::tables::clear_wojakmap_claims(&mut tables)?;
+      }
+      wtx.commit()?;
+    }
+
+    let rtx = self.database.begin_read()?;
+    let number_to_id = rtx.open_table(INSCRIPTION_NUMBER_TO_INSCRIPTION_ID)?;
+    let id_to_entry = rtx.open_table(INSCRIPTION_ID_TO_INSCRIPTION_ENTRY)?;
+    let mut claims: Vec<(InscriptionId, u32, u32, Option<Vec<u8>>)> = Vec::new();
+
+    for entry in number_to_id.iter()? {
+      let (_, id_guard) = entry?;
+      let id = InscriptionId::load(*id_guard.value());
+      let Some(entry_guard) = id_to_entry.get(&id.store())? else {
+        continue;
+      };
+      let entry = InscriptionEntry::load(entry_guard.value());
+      let body = self
+        .get_inscription_by_id(id)?
+        .and_then(|inscription| inscription.body);
+      claims.push((id, entry.height, entry.timestamp, body));
+    }
+    drop(number_to_id);
+    drop(id_to_entry);
+    drop(rtx);
+
+    // Sort by claim height so first-wins matches chain order.
+    claims.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.to_string().cmp(&b.0.to_string())));
+
+    let network = self.chain.network();
+    let wtx = self.database.begin_write()?;
+    {
+      let tables = crate::wjk20::open_write_tables(&wtx)?;
+      let mut wjk20 = crate::wjk20::Wjk20Updater::new(tables, network);
+      for (id, height, timestamp, body) in &claims {
+        wjk20.try_claim_wojakmap(*id, *height, *timestamp, body.as_deref())?;
+      }
+    }
+    wtx.commit()?;
+
+    let count = {
+      let rtx = self.database.begin_read()?;
+      let tables = crate::wjk20::open_read_tables(&rtx)?;
+      tables.wojakmap_claims.len()?
+    };
+    log::info!("Indexed {count} wojakmap claim(s)");
+
+    Ok(())
   }
 
   pub(crate) fn get_block_by_height(&self, height: u32) -> Result<Option<Block>> {

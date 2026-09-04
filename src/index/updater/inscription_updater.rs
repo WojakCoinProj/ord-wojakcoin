@@ -34,6 +34,7 @@ pub(super) struct InscriptionUpdater<'a, 'tx> {
   number_to_parents: &'a mut MultimapTable<'tx, u32, u32>,
   parent_number_to_children: &'a mut MultimapTable<'tx, u32, u32>,
   network: Network,
+  wjk20: Option<crate::wjk20::Wjk20Updater<'tx>>,
 }
 
 impl<'a, 'tx> InscriptionUpdater<'a, 'tx> {
@@ -61,6 +62,7 @@ impl<'a, 'tx> InscriptionUpdater<'a, 'tx> {
     number_to_parents: &'a mut MultimapTable<'tx, u32, u32>,
     parent_number_to_children: &'a mut MultimapTable<'tx, u32, u32>,
     network: Network,
+    wjk20: Option<crate::wjk20::Wjk20Updater<'tx>>,
   ) -> Result<Self> {
     let next_number = number_to_id
       .iter()?
@@ -92,6 +94,7 @@ impl<'a, 'tx> InscriptionUpdater<'a, 'tx> {
       number_to_parents,
       parent_number_to_children,
       network,
+      wjk20,
     })
   }
 
@@ -250,6 +253,10 @@ impl<'a, 'tx> InscriptionUpdater<'a, 'tx> {
               .parent_number_to_children
               .insert(parent_number, &child_number)?;
 
+            if let Some(wjk20) = &mut self.wjk20 {
+              wjk20.mark_wojakmap_root(*parent_number)?;
+            }
+
             // In upstream ord (SegWit), parents are input[0..N] so their
             // inscriptions sit at low sat offsets and naturally land in their
             // return outputs. In our P2SH model, the commit must be input[0]
@@ -275,6 +282,16 @@ impl<'a, 'tx> InscriptionUpdater<'a, 'tx> {
                 )?;
               }
             }
+          }
+
+          if let Some(wjk20) = &mut self.wjk20 {
+            wjk20.on_inscription_revealed(
+              og_inscription_id,
+              child_number,
+              self.height,
+              self.timestamp,
+              inscription.body.as_deref(),
+            )?;
           }
 
           inscriptions.push(Flotsam {
@@ -365,23 +382,17 @@ impl<'a, 'tx> InscriptionUpdater<'a, 'tx> {
     script_pubkey: Option<&Script>,
   ) -> Result {
     let inscription_id = flotsam.inscription_id.store();
+    let origin = flotsam.origin;
+    let id = flotsam.inscription_id;
 
-    let new_address = match script_pubkey {
-      Some(script) => Address::from_script(script, self.network)
-        .map(|a| a.to_string())
-        .unwrap_or_else(|_| "unknown".to_string()),
-      None => "unbound".to_string(),
-    };
-
-    match flotsam.origin {
+    let old_address = match origin {
       Origin::Old(old_satpoint) => {
         self.satpoint_to_id.remove(&old_satpoint.store())?;
 
-        if let Some(old_address) = self.id_to_address.get(&inscription_id)? {
-          self
-            .address_to_inscription_ids
-            .remove(old_address.value(), &inscription_id)?;
-        }
+        self
+          .id_to_address
+          .get(&inscription_id)?
+          .map(|a| a.value().to_string())
       }
       Origin::New(fee) => {
         self
@@ -416,7 +427,21 @@ impl<'a, 'tx> InscriptionUpdater<'a, 'tx> {
         )?;
 
         self.next_number += 1;
+        None
       }
+    };
+
+    let new_address = match script_pubkey {
+      Some(script) => Address::from_script(script, self.network)
+        .map(|a| a.to_string())
+        .unwrap_or_else(|_| "unknown".to_string()),
+      None => "unbound".to_string(),
+    };
+
+    if let Some(old_address) = old_address.as_ref() {
+      self
+        .address_to_inscription_ids
+        .remove(old_address.as_str(), &inscription_id)?;
     }
 
     // Add to new address
@@ -431,6 +456,23 @@ impl<'a, 'tx> InscriptionUpdater<'a, 'tx> {
 
     self.satpoint_to_id.insert(&new_satpoint, &inscription_id)?;
     self.id_to_satpoint.insert(&inscription_id, &new_satpoint)?;
+
+    if let Some(wjk20) = &mut self.wjk20 {
+      match origin {
+        Origin::New(_) => {
+          let inscription_number = self.next_number.saturating_sub(1);
+          wjk20.on_inscription_placed(id, inscription_number, &new_address)?;
+        }
+        Origin::Old(_) => {
+          if let Some(from) = old_address {
+            if let Some(entry) = self.id_to_entry.get(&inscription_id)? {
+              let inscription_number = InscriptionEntry::load(entry.value()).number;
+              wjk20.on_inscription_sent(id, inscription_number, &from, &new_address)?;
+            }
+          }
+        }
+      }
+    }
 
     Ok(())
   }

@@ -6,6 +6,10 @@ pub(crate) enum IndexSubcommand {
   Compact,
   #[clap(about = "Export index to TSV")]
   Export(Export),
+  #[clap(about = "Rebuild WJK-20 balance ledger from indexed blocks")]
+  RebuildWjk20,
+  #[clap(about = "Rebuild wojakmap block claims from indexed inscriptions")]
+  RebuildWojakmaps,
   #[clap(about = "Update the index")]
   Update,
 }
@@ -18,6 +22,14 @@ impl IndexSubcommand {
         index.compact()
       }
       Self::Export(export) => export.run(settings),
+      Self::RebuildWjk20 => {
+        let index = Index::open(&settings)?;
+        crate::wjk20::rebuild(&index)
+      }
+      Self::RebuildWojakmaps => {
+        let index = Index::open(&settings)?;
+        crate::wjk20::rebuild_wojakmaps(&index)
+      }
       Self::Update => run(settings),
     }
   }

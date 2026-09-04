@@ -6,7 +6,11 @@ pub struct InscriptionId {
   pub index: u32,
 }
 
-impl InscriptionId {}
+impl InscriptionId {
+  pub fn store_bytes(self) -> [u8; 36] {
+    crate::index::entry::Entry::store(self)
+  }
+}
 
 impl<'de> Deserialize<'de> for InscriptionId {
   fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>

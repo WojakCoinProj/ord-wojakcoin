@@ -5,7 +5,7 @@
 
 Ordinal indexer and block explorer for **Wojakcoin**. Originally forked from [apezord/ord-dogecoin](https://github.com/apezord/ord-dogecoin) (based on [ordinals/ord](https://github.com/ordinals/ord) v0.5.1), but extensively rewritten with modernized dependencies (redb 3.x, axum 0.8, reqwest 0.12), a standalone wallet with local key management, batch inscription support, and the [WJK-721](docs/wjk-721.md) extended inscription envelope specification.
 
-The indexer and explorer support all inscription content types — **wojakinals** (NFTs/media), **wojakmaps** (map/collection inscriptions with WJK-721 provenance), and **WJK-20** deploy/transfer JSON. WJK-20 balance tracking is not built in (index content only); use an external WJK-20 indexer for balances if needed.
+The indexer and explorer support all inscription content types — **wojakinals** (NFTs/media), **wojakmaps** (dogemap-style `{N}.wojakmap` block claims), **WJK-721** collections (parent/delegate/properties), and **WJK-20** deploy/transfer JSON with an indexed balance ledger and HTTP APIs.
 
 ## Requirements
 
@@ -107,7 +107,36 @@ ordwoj index export --include-addresses > inscriptions.tsv
 ordwoj index compact
 ```
 
+### Rebuild WJK-20 ledger
+
+If you upgraded from a build without WJK-20 tables, or need to refresh balances:
+
+```bash
+ordwoj index rebuild-wjk20
+```
+
 ### JSON API
+
+The server returns JSON when the `Accept: application/json` header is set:
+
+#### WJK-20 and wojakmaps
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/tokens` | All deployed WJK-20 tokens |
+| `GET /api/tokens/{tick}` | One token (`max`, `lim`, deploy inscription, etc.) |
+| `GET /api/deploys?limit=&offset=` | Deploy events |
+| `GET /api/balances/{address}` | All WJK-20 balances for an address |
+| `GET /api/balances/{address}/{tick}` | Balance for one tick |
+| `GET /api/wojakmaps?limit=&offset=` | Wojakmap block claims (`{N}.wojakmap`, first wins) |
+| `GET /api/wojakmap/{block}` | Claim for a block number |
+| `GET /api/wojakmaps/{inscription_id}` | Claim owned by an inscription id |
+| `GET /api/collections?limit=&offset=` | WJK-721 collection roots (inscriptions with children) |
+| `GET /api/collections/{inscription_id}` | Collection detail + child inscription IDs |
+
+WJK-20 JSON inscriptions use `{"p":"wjk-20","op":"deploy|mint|transfer",...}` (BRC-20 style). Balances update on mint and when a transfer inscription is sent to a recipient.
+
+#### Explorer (HTML or JSON with `Accept: application/json`)
 
 The server returns JSON when the `Accept: application/json` header is set:
 

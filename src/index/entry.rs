@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) trait Entry: Sized {
+pub(crate) trait Entry: Sized {
   type Value;
 
   fn load(value: Self::Value) -> Self;
@@ -63,7 +63,7 @@ impl Entry for InscriptionEntry {
   }
 }
 
-pub(super) type InscriptionIdValue = [u8; 36];
+pub(crate) type InscriptionIdValue = [u8; 36];
 
 impl Entry for InscriptionId {
   type Value = InscriptionIdValue;
@@ -114,6 +114,41 @@ impl Entry for SatPoint {
     let mut value = [0; 44];
     self.consensus_encode(&mut value.as_mut_slice()).unwrap();
     value
+  }
+}
+
+/// First inscription with body `{N}.wojakmap` claims block N (dogemap-style).
+#[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
+pub struct WojakmapClaimEntry {
+  pub block_number: u32,
+  pub owner_inscription_id: InscriptionId,
+  pub claim_height: u32,
+  pub claim_timestamp: u32,
+}
+
+pub(crate) type WojakmapClaimEntryValue = (u32, InscriptionIdValue, u32, u32);
+
+impl Entry for WojakmapClaimEntry {
+  type Value = WojakmapClaimEntryValue;
+
+  fn load(
+    (block_number, owner_inscription_id, claim_height, claim_timestamp): WojakmapClaimEntryValue,
+  ) -> Self {
+    Self {
+      block_number,
+      owner_inscription_id: InscriptionId::load(owner_inscription_id),
+      claim_height,
+      claim_timestamp,
+    }
+  }
+
+  fn store(self) -> Self::Value {
+    (
+      self.block_number,
+      self.owner_inscription_id.store(),
+      self.claim_height,
+      self.claim_timestamp,
+    )
   }
 }
 

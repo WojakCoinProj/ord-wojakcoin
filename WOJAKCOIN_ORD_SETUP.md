@@ -1,6 +1,6 @@
 # Wojakcoin Ord (ordwoj) Setup
 
-`ordwoj` is the Wojakcoin fork of [ordinals/ord](https://github.com/ordinals/ord), based on the same architecture as [ord-pepecoin](https://github.com/mvdnbrk/ord-pepecoin). It indexes **wojakinals** (inscriptions), **WJK-20** fungible token deploys/transfers, **WJK-721** collections (parent/delegate/properties), and **wojakmaps** (any inscribed content the indexer can render).
+`ordwoj` is the Wojakcoin fork of [ordinals/ord](https://github.com/ordinals/ord), based on the same architecture as [ord-pepecoin](https://github.com/mvdnbrk/ord-pepecoin). It indexes **wojakinals** (inscriptions), **WJK-20** fungible token deploys/transfers, **WJK-721** collections (parent/delegate/properties), and **wojakmaps** (dogemap-style `{N}.wojakmap` block claims).
 
 ## Requirements
 
@@ -72,7 +72,19 @@ Use `--reinscribe` and WJK-721 tags per [docs/wjk-721.md](docs/wjk-721.md) for c
 | **wojakinals** | Wojakcoin ordinals / inscriptions (NFTs, images, JSON) |
 | **WJK-20** | Fungible token inscriptions (`{"p":"wjk-20",...}` style); indexed as content, no built-in balance API |
 | **WJK-721** | Extended envelope: parent, delegate, properties, compressed metadata |
-| **wojakmaps** | Map/collection inscriptions; use WJK-721 `parent` + `properties` tags |
+| **wojakmaps** | Dogemap-style block claims: first `text/plain` body `{N}.wojakmap` wins that block |
+| **WJK-721 collections** | Parent/child provenance via `parent` + `properties` tags |
+
+## Nginx (public explorer)
+
+Domains: **ord.wojakcoin.cash**, **ord.wojakcoin2017.xyz** → `127.0.0.1:3080`
+
+```bash
+sudo ./deploy/install-nginx.sh
+sudo certbot --nginx -d ord.wojakcoin.cash -d ord.wojakcoin2017.xyz
+```
+
+Config: `deploy/nginx-ord-wojakcoin.conf`
 
 ## Related repos
 

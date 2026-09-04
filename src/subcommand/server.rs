@@ -43,6 +43,7 @@ use {
 
 mod accept_encoding;
 mod accept_json;
+mod api_metaprotocol;
 mod error;
 mod query;
 
@@ -230,6 +231,28 @@ impl Server {
         .route("/status", get(Self::status))
         .route("/tx/{txid}", get(Self::transaction))
         .route("/update", get(Self::update))
+        .route("/api/tokens", get(api_metaprotocol::api_tokens))
+        .route("/api/tokens/{tick}", get(api_metaprotocol::api_token))
+        .route("/api/deploys", get(api_metaprotocol::api_deploys))
+        .route("/api/balances/{address}", get(api_metaprotocol::api_balances))
+        .route(
+          "/api/balances/{address}/{tick}",
+          get(api_metaprotocol::api_balance),
+        )
+        .route("/api/wojakmaps", get(api_metaprotocol::api_wojakmaps))
+        .route(
+          "/api/wojakmap/{block_number}",
+          get(api_metaprotocol::api_wojakmap_block),
+        )
+        .route(
+          "/api/wojakmaps/{inscription_id}",
+          get(api_metaprotocol::api_wojakmap),
+        )
+        .route("/api/collections", get(api_metaprotocol::api_collections))
+        .route(
+          "/api/collections/{inscription_id}",
+          get(api_metaprotocol::api_collection),
+        )
         .layer(Extension(index))
         .layer(Extension(page_config))
         .layer(Extension(Arc::new(settings.clone())))

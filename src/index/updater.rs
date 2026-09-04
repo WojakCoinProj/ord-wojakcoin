@@ -10,7 +10,7 @@ mod inscription_updater;
 
 pub(crate) struct BlockData {
   pub(crate) header: BlockHeader,
-  txdata: Vec<(Transaction, Txid)>,
+  pub(crate) txdata: Vec<(Transaction, Txid)>,
 }
 
 impl From<Block> for BlockData {
@@ -406,6 +406,12 @@ impl Updater {
       block.txdata.len()
     );
 
+    let wjk20_tables = crate::wjk20::open_write_tables(wtx)?;
+    let wjk20 = Some(crate::wjk20::Wjk20Updater::new(
+      wjk20_tables,
+      index.chain.network(),
+    ));
+
     let mut inscription_id_to_inscription_entry =
       wtx.open_table(INSCRIPTION_ID_TO_INSCRIPTION_ENTRY)?;
     let mut inscription_id_to_satpoint = wtx.open_table(INSCRIPTION_ID_TO_SATPOINT)?;
@@ -422,7 +428,6 @@ impl Updater {
     let mut id_to_address = wtx.open_table(INSCRIPTION_ID_TO_ADDRESS)?;
     let mut number_to_parents = wtx.open_multimap_table(INSCRIPTION_NUMBER_TO_PARENTS)?;
     let mut parent_number_to_children = wtx.open_multimap_table(INSCRIPTION_NUMBER_TO_CHILDREN)?;
-
     let mut lost_sats = statistic_to_count
       .get(&Statistic::LostSats.key())?
       .map(|lost_sats| lost_sats.value())
@@ -448,6 +453,7 @@ impl Updater {
       &mut number_to_parents,
       &mut parent_number_to_children,
       index.chain.network(),
+      wjk20,
     )?;
 
     if self.index_sats {

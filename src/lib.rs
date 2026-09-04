@@ -95,6 +95,7 @@ macro_rules! tprintln {
 }
 
 pub mod api;
+pub mod wjk20;
 mod arguments;
 mod blocktime;
 mod chain;
