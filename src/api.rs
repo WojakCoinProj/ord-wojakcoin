@@ -183,6 +183,32 @@ pub struct CollectionDetail {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+pub struct DomainInfo {
+  pub name: String,
+  pub full_name: String,
+  pub inscription_id: String,
+  pub inscription_number: u32,
+  pub owner_address: String,
+  pub height: u32,
+  pub timestamp: u32,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+pub struct DomainLookup {
+  pub name: String,
+  pub full_name: String,
+  pub available: bool,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub domain: Option<DomainInfo>,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+pub struct DomainStats {
+  pub total: u64,
+  pub unique_owners: u64,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct Status {
   pub address_index: bool,
   pub chain: String,

@@ -73,6 +73,9 @@ define_table! { WJK20_EVENT_BY_NUMBER, u32, &[u8] }
 define_multimap_table! { WJK20_TICK_TO_NUMBERS, &str, u32 }
 define_table! { WJKMAP_ROOT_NUMBER, u32, u8 }
 define_table! { WJKMAP_BLOCK_TO_CLAIM, u32, WojakmapClaimEntryValue }
+define_table! { WJK_DOMAIN_NAME, &str, &[u8] }
+define_table! { WJK_DOMAIN_ID_TO_NAME, &InscriptionIdValue, &str }
+define_multimap_table! { WJK_DOMAIN_ADDRESS_TO_NAMES, &str, &str }
 
 const SCHEMA_VERSION: u64 = 6;
 
@@ -762,6 +765,92 @@ impl Index {
       tables.wojakmap_claims.len()?
     };
     log::info!("Indexed {count} wojakmap claim(s)");
+
+    Ok(())
+  }
+
+  /// Rebuild `.wjk` domain registry from already-indexed inscription bodies.
+  pub fn rebuild_domains(&self) -> Result {
+    log::info!("Rebuilding .wjk domains from indexed inscriptions…");
+
+    {
+      let wtx = self.database.begin_write()?;
+      {
+        let mut tables = crate::wjk20::open_write_tables(&wtx)?;
+        crate::wjk20::tables::clear_domains(&mut tables)?;
+      }
+      wtx.commit()?;
+    }
+
+    let rtx = self.database.begin_read()?;
+    let number_to_id = rtx.open_table(INSCRIPTION_NUMBER_TO_INSCRIPTION_ID)?;
+    let id_to_entry = rtx.open_table(INSCRIPTION_ID_TO_INSCRIPTION_ENTRY)?;
+    let id_to_address = rtx.open_table(INSCRIPTION_ID_TO_ADDRESS)?;
+    let mut items: Vec<(InscriptionId, u32, u32, u32, Option<Vec<u8>>, Option<String>, Option<String>)> =
+      Vec::new();
+
+    for entry in number_to_id.iter()? {
+      let (_, id_guard) = entry?;
+      let id = InscriptionId::load(*id_guard.value());
+      let Some(entry_guard) = id_to_entry.get(&id.store())? else {
+        continue;
+      };
+      let entry = InscriptionEntry::load(entry_guard.value());
+      let inscription = self.get_inscription_by_id(id)?;
+      let (body, content_type) = match &inscription {
+        Some(i) => (
+          i.body.clone(),
+          i.content_type().map(str::to_string),
+        ),
+        None => (None, None),
+      };
+      let address = id_to_address
+        .get(&id.store())?
+        .map(|g| g.value().to_string());
+      items.push((
+        id,
+        entry.number,
+        entry.height,
+        entry.timestamp,
+        body,
+        content_type,
+        address,
+      ));
+    }
+    drop(number_to_id);
+    drop(id_to_entry);
+    drop(id_to_address);
+    drop(rtx);
+
+    items.sort_by(|a, b| a.2.cmp(&b.2).then_with(|| a.0.to_string().cmp(&b.0.to_string())));
+
+    let network = self.chain.network();
+    let wtx = self.database.begin_write()?;
+    {
+      let tables = crate::wjk20::open_write_tables(&wtx)?;
+      let mut wjk20 = crate::wjk20::Wjk20Updater::new(tables, network);
+      for (id, number, height, timestamp, body, content_type, address) in &items {
+        wjk20.try_register_domain(
+          *id,
+          *number,
+          *height,
+          *timestamp,
+          body.as_deref(),
+          content_type.as_deref(),
+        )?;
+        if let Some(address) = address {
+          wjk20.on_inscription_placed(*id, *number, address)?;
+        }
+      }
+    }
+    wtx.commit()?;
+
+    let count = {
+      let rtx = self.database.begin_read()?;
+      let tables = crate::wjk20::open_read_tables(&rtx)?;
+      tables.domain_name.len()?
+    };
+    log::info!("Indexed {count} .wjk domain(s)");
 
     Ok(())
   }

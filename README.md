@@ -5,7 +5,7 @@
 
 Ordinal indexer and block explorer for **Wojakcoin**. Originally forked from [apezord/ord-dogecoin](https://github.com/apezord/ord-dogecoin) (based on [ordinals/ord](https://github.com/ordinals/ord) v0.5.1), but extensively rewritten with modernized dependencies (redb 3.x, axum 0.8, reqwest 0.12), a standalone wallet with local key management, batch inscription support, and the [WJK-721](docs/wjk-721.md) extended inscription envelope specification.
 
-The indexer and explorer support all inscription content types — **wojakinals** (NFTs/media), **wojakmaps** (dogemap-style `{N}.wojakmap` block claims), **WJK-721** collections (parent/delegate/properties), and **WJK-20** deploy/transfer JSON with an indexed balance ledger and HTTP APIs.
+The indexer and explorer support all inscription content types — **wojakinals** (NFTs/media), **wojakmaps** (dogemap-style `{N}.wojakmap` block claims), **`.wjk` domains** (dash-style `name.wjk` registrations), **WJK-721** collections (parent/delegate/properties), and **WJK-20** deploy/transfer JSON with an indexed balance ledger and HTTP APIs.
 
 ## Requirements
 
@@ -133,6 +133,10 @@ The server returns JSON when the `Accept: application/json` header is set:
 | `GET /api/wojakmaps/{inscription_id}` | Claim owned by an inscription id |
 | `GET /api/collections?limit=&offset=` | WJK-721 collection roots (inscriptions with children) |
 | `GET /api/collections/{inscription_id}` | Collection detail + child inscription IDs |
+| `GET /api/domains?limit=&offset=` | Registered `.wjk` domains (newest first) |
+| `GET /api/domains/stats` | Domain total + unique owners |
+| `GET /api/domains/name/{name}` | Availability lookup (strips `.wjk`) |
+| `GET /api/domains/address/{address}` | Domains owned by address |
 
 WJK-20 JSON inscriptions use `{"p":"wjk-20","op":"deploy|mint|transfer",...}` (BRC-20 style). Balances update on mint and when a transfer inscription is sent to a recipient.
 

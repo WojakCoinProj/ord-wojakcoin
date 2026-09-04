@@ -81,6 +81,47 @@ pub fn parse_wojakmap_claim(body: &[u8]) -> Option<u32> {
   prefix.parse().ok()
 }
 
+/// Parse dash-style domain body: trimmed+lowercased `{label}.wjk`.
+/// Returns the label (without suffix) if valid.
+pub fn parse_wjk_domain(body: &[u8], content_type: Option<&str>) -> Option<String> {
+  if let Some(ct) = content_type {
+    if !ct.to_ascii_lowercase().contains("text") {
+      return None;
+    }
+  }
+  let text = std::str::from_utf8(body).ok()?;
+  let trimmed = text.trim().to_ascii_lowercase();
+  // Reject .wojakmap and any longer suffix that merely contains .wjk mid-string.
+  if !trimmed.ends_with(".wjk") || trimmed.ends_with(".wojakmap") {
+    return None;
+  }
+  let name = trimmed.strip_suffix(".wjk")?;
+  if !validate_domain_name(name) {
+    return None;
+  }
+  Some(name.to_string())
+}
+
+pub fn validate_domain_name(name: &str) -> bool {
+  let len = name.len();
+  if !(1..=64).contains(&len) {
+    return false;
+  }
+  if name.starts_with('-') || name.ends_with('-') {
+    return false;
+  }
+  if !name
+    .chars()
+    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+  {
+    return false;
+  }
+  if name.chars().all(|c| c.is_ascii_digit()) {
+    return false;
+  }
+  true
+}
+
 fn parse_amount(value: &serde_json::Value) -> Option<u128> {
   match value {
     serde_json::Value::String(s) => parse_amount_str(s),
@@ -127,5 +168,24 @@ mod tests {
     assert_eq!(parse_wojakmap_claim(b"1.dogemap"), None);
     assert_eq!(parse_wojakmap_claim(b".wojakmap"), None);
     assert_eq!(parse_wojakmap_claim(b"01.wojakmap"), Some(1));
+  }
+
+  #[test]
+  fn parses_wjk_domain() {
+    assert_eq!(
+      parse_wjk_domain(b"wojaktoshi.wjk", Some("text/plain")),
+      Some("wojaktoshi".into())
+    );
+    assert_eq!(
+      parse_wjk_domain(b"  Alice-1.WJK\n", Some("text/plain;charset=utf-8")),
+      Some("alice-1".into())
+    );
+    assert_eq!(parse_wjk_domain(b"1.wojakmap", Some("text/plain")), None);
+    assert_eq!(parse_wjk_domain(b"123.wjk", Some("text/plain")), None);
+    assert_eq!(parse_wjk_domain(b"-bad.wjk", Some("text/plain")), None);
+    assert_eq!(parse_wjk_domain(b"bad-.wjk", Some("text/plain")), None);
+    assert_eq!(parse_wjk_domain(b"has.dot.wjk", Some("text/plain")), None);
+    assert_eq!(parse_wjk_domain(b"ok.wjk", Some("image/png")), None);
+    assert_eq!(parse_wjk_domain(b"ok.wjk", None), Some("ok".into()));
   }
 }

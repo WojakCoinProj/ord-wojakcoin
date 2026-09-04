@@ -253,6 +253,16 @@ impl Server {
           "/api/collections/{inscription_id}",
           get(api_metaprotocol::api_collection),
         )
+        .route("/api/domains", get(api_metaprotocol::api_domains))
+        .route("/api/domains/stats", get(api_metaprotocol::api_domain_stats))
+        .route(
+          "/api/domains/name/{name}",
+          get(api_metaprotocol::api_domain_name),
+        )
+        .route(
+          "/api/domains/address/{address}",
+          get(api_metaprotocol::api_domains_by_address),
+        )
         .layer(Extension(index))
         .layer(Extension(page_config))
         .layer(Extension(Arc::new(settings.clone())))

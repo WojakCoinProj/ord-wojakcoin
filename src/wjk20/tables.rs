@@ -4,6 +4,7 @@ use {
     entry::{InscriptionIdValue, WojakmapClaimEntryValue},
     WJK20_BALANCE, WJK20_DEPLOY, WJK20_EVENT_BY_NUMBER, WJK20_PENDING_MINT,
     WJK20_PENDING_TRANSFER, WJK20_TICK_TO_NUMBERS, WJKMAP_BLOCK_TO_CLAIM, WJKMAP_ROOT_NUMBER,
+    WJK_DOMAIN_ADDRESS_TO_NAMES, WJK_DOMAIN_ID_TO_NAME, WJK_DOMAIN_NAME,
   },
   redb::{
     MultimapTable, ReadOnlyMultimapTable, ReadOnlyTable, ReadTransaction, ReadableMultimapTable,
@@ -54,6 +55,17 @@ pub struct PendingMint {
   pub amt: u128,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DomainRecord {
+  pub name: String,
+  pub full_name: String,
+  pub inscription_id: String,
+  pub inscription_number: u32,
+  pub owner_address: String,
+  pub height: u32,
+  pub timestamp: u32,
+}
+
 pub struct Wjk20WriteTables<'wtx> {
   pub deploy: Table<'wtx, &'static str, &'static [u8]>,
   pub balance: Table<'wtx, &'static [u8], &'static [u8]>,
@@ -63,6 +75,9 @@ pub struct Wjk20WriteTables<'wtx> {
   pub tick_to_numbers: MultimapTable<'wtx, &'static str, u32>,
   pub wojakmap_roots: Table<'wtx, u32, u8>,
   pub wojakmap_claims: Table<'wtx, u32, WojakmapClaimEntryValue>,
+  pub domain_name: Table<'wtx, &'static str, &'static [u8]>,
+  pub domain_id_to_name: Table<'wtx, &'static InscriptionIdValue, &'static str>,
+  pub domain_address_to_names: MultimapTable<'wtx, &'static str, &'static str>,
 }
 
 pub struct Wjk20ReadTables {
@@ -74,6 +89,9 @@ pub struct Wjk20ReadTables {
   pub tick_to_numbers: ReadOnlyMultimapTable<&'static str, u32>,
   pub wojakmap_roots: ReadOnlyTable<u32, u8>,
   pub wojakmap_claims: ReadOnlyTable<u32, WojakmapClaimEntryValue>,
+  pub domain_name: ReadOnlyTable<&'static str, &'static [u8]>,
+  pub domain_id_to_name: ReadOnlyTable<&'static InscriptionIdValue, &'static str>,
+  pub domain_address_to_names: ReadOnlyMultimapTable<&'static str, &'static str>,
 }
 
 pub fn open_write_tables<'wtx>(wtx: &'wtx WriteTransaction) -> Result<Wjk20WriteTables<'wtx>> {
@@ -86,6 +104,9 @@ pub fn open_write_tables<'wtx>(wtx: &'wtx WriteTransaction) -> Result<Wjk20Write
     tick_to_numbers: wtx.open_multimap_table(WJK20_TICK_TO_NUMBERS)?,
     wojakmap_roots: wtx.open_table(WJKMAP_ROOT_NUMBER)?,
     wojakmap_claims: wtx.open_table(WJKMAP_BLOCK_TO_CLAIM)?,
+    domain_name: wtx.open_table(WJK_DOMAIN_NAME)?,
+    domain_id_to_name: wtx.open_table(WJK_DOMAIN_ID_TO_NAME)?,
+    domain_address_to_names: wtx.open_multimap_table(WJK_DOMAIN_ADDRESS_TO_NAMES)?,
   })
 }
 
@@ -99,6 +120,9 @@ pub fn open_read_tables(rtx: &ReadTransaction) -> Result<Wjk20ReadTables> {
     tick_to_numbers: rtx.open_multimap_table(WJK20_TICK_TO_NUMBERS)?,
     wojakmap_roots: rtx.open_table(WJKMAP_ROOT_NUMBER)?,
     wojakmap_claims: rtx.open_table(WJKMAP_BLOCK_TO_CLAIM)?,
+    domain_name: rtx.open_table(WJK_DOMAIN_NAME)?,
+    domain_id_to_name: rtx.open_table(WJK_DOMAIN_ID_TO_NAME)?,
+    domain_address_to_names: rtx.open_multimap_table(WJK_DOMAIN_ADDRESS_TO_NAMES)?,
   })
 }
 
@@ -106,10 +130,11 @@ pub fn clear_tables(tables: &mut Wjk20WriteTables<'_>) -> Result {
   clear_wjk20_ledger(tables)?;
   tables.wojakmap_roots.retain(|_, _| false)?;
   clear_wojakmap_claims(tables)?;
+  clear_domains(tables)?;
   Ok(())
 }
 
-/// Clear fungible-token ledger only (keeps wojakmap claims intact).
+/// Clear fungible-token ledger only (keeps wojakmap claims / domains intact).
 pub fn clear_wjk20_ledger(tables: &mut Wjk20WriteTables<'_>) -> Result {
   tables.deploy.retain(|_, _| false)?;
   tables.balance.retain(|_, _| false)?;
@@ -138,6 +163,27 @@ pub fn clear_wojakmap_claims(tables: &mut Wjk20WriteTables<'_>) -> Result {
   Ok(())
 }
 
+pub fn clear_domains(tables: &mut Wjk20WriteTables<'_>) -> Result {
+  tables.domain_name.retain(|_, _| false)?;
+  tables.domain_id_to_name.retain(|_, _| false)?;
+
+  use redb::ReadableMultimapTable;
+  let mut entries = Vec::new();
+  for entry in tables.domain_address_to_names.iter()? {
+    let (address, names) = entry?;
+    let address = address.value().to_string();
+    for name in names {
+      entries.push((address.clone(), name?.value().to_string()));
+    }
+  }
+  for (address, name) in entries {
+    tables
+      .domain_address_to_names
+      .remove(address.as_str(), name.as_str())?;
+  }
+  Ok(())
+}
+
 pub fn migrate_tx(tx: &WriteTransaction) -> Result {
   tx.open_table(WJK20_DEPLOY)?;
   tx.open_table(WJK20_BALANCE)?;
@@ -147,6 +193,9 @@ pub fn migrate_tx(tx: &WriteTransaction) -> Result {
   tx.open_multimap_table(WJK20_TICK_TO_NUMBERS)?;
   tx.open_table(WJKMAP_ROOT_NUMBER)?;
   tx.open_table(WJKMAP_BLOCK_TO_CLAIM)?;
+  tx.open_table(WJK_DOMAIN_NAME)?;
+  tx.open_table(WJK_DOMAIN_ID_TO_NAME)?;
+  tx.open_multimap_table(WJK_DOMAIN_ADDRESS_TO_NAMES)?;
   Ok(())
 }
 

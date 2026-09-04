@@ -138,3 +138,30 @@ pub(super) async fn api_collection(
     None => Ok(StatusCode::NOT_FOUND.into_response()),
   }
 }
+
+pub(super) async fn api_domains(
+  Extension(index): Extension<Arc<Index>>,
+  Query(query): Query<ListQuery>,
+) -> ServerResult<Json<Vec<api::DomainInfo>>> {
+  Ok(Json(index.list_domains(query.limit, query.offset)?))
+}
+
+pub(super) async fn api_domain_stats(
+  Extension(index): Extension<Arc<Index>>,
+) -> ServerResult<Json<api::DomainStats>> {
+  Ok(Json(index.domain_stats()?))
+}
+
+pub(super) async fn api_domain_name(
+  Extension(index): Extension<Arc<Index>>,
+  Path(name): Path<String>,
+) -> ServerResult<Json<api::DomainLookup>> {
+  Ok(Json(index.domain_lookup(&name)?))
+}
+
+pub(super) async fn api_domains_by_address(
+  Extension(index): Extension<Arc<Index>>,
+  Path(address): Path<String>,
+) -> ServerResult<Json<Vec<api::DomainInfo>>> {
+  Ok(Json(index.domains_by_address(&address)?))
+}

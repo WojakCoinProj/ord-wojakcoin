@@ -291,6 +291,7 @@ impl<'a, 'tx> InscriptionUpdater<'a, 'tx> {
               self.height,
               self.timestamp,
               inscription.body.as_deref(),
+              inscription.content_type(),
             )?;
           }
 

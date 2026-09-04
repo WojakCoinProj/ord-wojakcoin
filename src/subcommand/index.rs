@@ -10,6 +10,8 @@ pub(crate) enum IndexSubcommand {
   RebuildWjk20,
   #[clap(about = "Rebuild wojakmap block claims from indexed inscriptions")]
   RebuildWojakmaps,
+  #[clap(about = "Rebuild .wjk domain registry from indexed inscriptions")]
+  RebuildDomains,
   #[clap(about = "Update the index")]
   Update,
 }
@@ -29,6 +31,10 @@ impl IndexSubcommand {
       Self::RebuildWojakmaps => {
         let index = Index::open(&settings)?;
         crate::wjk20::rebuild_wojakmaps(&index)
+      }
+      Self::RebuildDomains => {
+        let index = Index::open(&settings)?;
+        crate::wjk20::rebuild_domains(&index)
       }
       Self::Update => run(settings),
     }

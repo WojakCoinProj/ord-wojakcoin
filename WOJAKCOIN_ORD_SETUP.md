@@ -73,6 +73,7 @@ Use `--reinscribe` and WJK-721 tags per [docs/wjk-721.md](docs/wjk-721.md) for c
 | **WJK-20** | Fungible token inscriptions (`{"p":"wjk-20",...}` style); indexed as content, no built-in balance API |
 | **WJK-721** | Extended envelope: parent, delegate, properties, compressed metadata |
 | **wojakmaps** | Dogemap-style block claims: first `text/plain` body `{N}.wojakmap` wins that block |
+| **`.wjk` domains** | Dash-style name registrations: first `text/*` body `label.wjk` wins; ownership follows the inscription UTXO |
 | **WJK-721 collections** | Parent/child provenance via `parent` + `properties` tags |
 
 ## Nginx (public explorer)

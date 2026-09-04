@@ -65,8 +65,17 @@ impl<'wtx> Wjk20Updater<'wtx> {
     height: u32,
     timestamp: u32,
     body: Option<&[u8]>,
+    content_type: Option<&str>,
   ) -> Result {
     self.try_claim_wojakmap(inscription_id, height, timestamp, body)?;
+    self.try_register_domain(
+      inscription_id,
+      inscription_number,
+      height,
+      timestamp,
+      body,
+      content_type,
+    )?;
 
     let Some(body) = body else {
       return Ok(());
@@ -84,12 +93,95 @@ impl<'wtx> Wjk20Updater<'wtx> {
     }
   }
 
+  /// Dash-style: first `{label}.wjk` text inscription registers that name.
+  pub fn try_register_domain(
+    &mut self,
+    inscription_id: InscriptionId,
+    inscription_number: u32,
+    height: u32,
+    timestamp: u32,
+    body: Option<&[u8]>,
+    content_type: Option<&str>,
+  ) -> Result {
+    let Some(body) = body else {
+      return Ok(());
+    };
+    let Some(name) = parse::parse_wjk_domain(body, content_type) else {
+      return Ok(());
+    };
+    if self.tables.domain_name.get(name.as_str())?.is_some() {
+      return Ok(());
+    }
+    let record = DomainRecord {
+      name: name.clone(),
+      full_name: format!("{name}.wjk"),
+      inscription_id: inscription_id.to_string(),
+      inscription_number,
+      owner_address: String::new(),
+      height,
+      timestamp,
+    };
+    let bytes = serde_json::to_vec(&record)?;
+    self
+      .tables
+      .domain_name
+      .insert(name.as_str(), bytes.as_slice())?;
+    self
+      .tables
+      .domain_id_to_name
+      .insert(&inscription_id.store(), name.as_str())?;
+    Ok(())
+  }
+
+  fn set_domain_owner(&mut self, inscription_id: InscriptionId, address: &str) -> Result {
+    let id = inscription_id.store();
+    let Some(name_guard) = self.tables.domain_id_to_name.get(&id)? else {
+      return Ok(());
+    };
+    let name = name_guard.value().to_string();
+    drop(name_guard);
+
+    let Some(record_guard) = self.tables.domain_name.get(name.as_str())? else {
+      return Ok(());
+    };
+    let mut record: DomainRecord = serde_json::from_slice(record_guard.value())?;
+    drop(record_guard);
+
+    let old_owner = record.owner_address.clone();
+    if old_owner == address {
+      return Ok(());
+    }
+
+    if !old_owner.is_empty() {
+      let _ = self
+        .tables
+        .domain_address_to_names
+        .remove(old_owner.as_str(), name.as_str())?;
+    }
+
+    record.owner_address = address.to_string();
+    let bytes = serde_json::to_vec(&record)?;
+    self
+      .tables
+      .domain_name
+      .insert(name.as_str(), bytes.as_slice())?;
+
+    if !address.is_empty() && address != "unknown" && address != "unbound" {
+      self
+        .tables
+        .domain_address_to_names
+        .insert(address, name.as_str())?;
+    }
+    Ok(())
+  }
+
   pub fn on_inscription_placed(
     &mut self,
     inscription_id: InscriptionId,
     inscription_number: u32,
     address: &str,
   ) -> Result {
+    self.set_domain_owner(inscription_id, address)?;
     self.patch_event(inscription_number, |event| {
       event.address = Some(address.to_string());
     })?;
@@ -118,6 +210,7 @@ impl<'wtx> Wjk20Updater<'wtx> {
       return Ok(());
     }
 
+    self.set_domain_owner(inscription_id, to_address)?;
     let id = inscription_id.store_bytes();
     let pending: PendingTransfer = {
       let Some(guard) = self.tables.pending_transfer.get(&id)? else {
@@ -226,6 +319,7 @@ impl<'wtx> Wjk20Updater<'wtx> {
                 height,
                 timestamp,
                 inscription.body.as_deref(),
+                inscription.content_type(),
               )?;
               self.on_inscription_placed(new_id, number, &address)?;
             }

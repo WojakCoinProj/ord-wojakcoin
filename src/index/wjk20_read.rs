@@ -1,5 +1,5 @@
 use super::*;
-use redb::{ReadableMultimapTable, ReadableTable};
+use redb::{ReadableMultimapTable, ReadableTable, ReadableTableMetadata};
 
 impl Index {
   pub(crate) fn wjk20_list_tokens(&self) -> Result<Vec<crate::wjk20::DeployRecord>> {
@@ -196,5 +196,95 @@ impl Index {
       }
     }
     Ok(children)
+  }
+
+  fn domain_record_to_api(record: crate::wjk20::tables::DomainRecord) -> api::DomainInfo {
+    api::DomainInfo {
+      name: record.name,
+      full_name: record.full_name,
+      inscription_id: record.inscription_id,
+      inscription_number: record.inscription_number,
+      owner_address: record.owner_address,
+      height: record.height,
+      timestamp: record.timestamp,
+    }
+  }
+
+  pub(crate) fn list_domains(&self, limit: usize, offset: usize) -> Result<Vec<api::DomainInfo>> {
+    let rtx = self.database.begin_read()?;
+    let tables = crate::wjk20::open_read_tables(&rtx)?;
+    let mut domains = Vec::new();
+    for entry in tables.domain_name.iter()? {
+      let (_, value) = entry?;
+      let record: crate::wjk20::tables::DomainRecord = serde_json::from_slice(value.value())?;
+      domains.push(Self::domain_record_to_api(record));
+    }
+    domains.sort_by(|a, b| b.height.cmp(&a.height).then_with(|| a.name.cmp(&b.name)));
+    Ok(domains.into_iter().skip(offset).take(limit).collect())
+  }
+
+  pub(crate) fn get_domain(&self, name: &str) -> Result<Option<api::DomainInfo>> {
+    let name = name
+      .trim()
+      .trim_end_matches(".wjk")
+      .trim_end_matches(".WJK")
+      .to_ascii_lowercase();
+    let rtx = self.database.begin_read()?;
+    let tables = crate::wjk20::open_read_tables(&rtx)?;
+    let Some(guard) = tables.domain_name.get(name.as_str())? else {
+      return Ok(None);
+    };
+    let record: crate::wjk20::tables::DomainRecord = serde_json::from_slice(guard.value())?;
+    Ok(Some(Self::domain_record_to_api(record)))
+  }
+
+  pub(crate) fn domain_lookup(&self, name: &str) -> Result<api::DomainLookup> {
+    let normalized = name
+      .trim()
+      .trim_end_matches(".wjk")
+      .trim_end_matches(".WJK")
+      .to_ascii_lowercase();
+    let full_name = format!("{normalized}.wjk");
+    let domain = self.get_domain(&normalized)?;
+    Ok(api::DomainLookup {
+      name: normalized,
+      full_name,
+      available: domain.is_none(),
+      domain,
+    })
+  }
+
+  pub(crate) fn domains_by_address(&self, address: &str) -> Result<Vec<api::DomainInfo>> {
+    let rtx = self.database.begin_read()?;
+    let tables = crate::wjk20::open_read_tables(&rtx)?;
+    let mut domains = Vec::new();
+    for name in tables.domain_address_to_names.get(address)? {
+      let name = name?.value().to_string();
+      if let Some(guard) = tables.domain_name.get(name.as_str())? {
+        let record: crate::wjk20::tables::DomainRecord = serde_json::from_slice(guard.value())?;
+        domains.push(Self::domain_record_to_api(record));
+      }
+    }
+    domains.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(domains)
+  }
+
+  pub(crate) fn domain_stats(&self) -> Result<api::DomainStats> {
+    let rtx = self.database.begin_read()?;
+    let tables = crate::wjk20::open_read_tables(&rtx)?;
+    let mut owners = std::collections::BTreeSet::new();
+    let mut total = 0u64;
+    for entry in tables.domain_name.iter()? {
+      let (_, value) = entry?;
+      let record: crate::wjk20::tables::DomainRecord = serde_json::from_slice(value.value())?;
+      total += 1;
+      if !record.owner_address.is_empty() {
+        owners.insert(record.owner_address);
+      }
+    }
+    Ok(api::DomainStats {
+      total,
+      unique_owners: owners.len() as u64,
+    })
   }
 }
